@@ -122,10 +122,18 @@ pub fn is_directory(path: &str) -> bool {
         Err(_) => false,
     }
 }
+
 pub fn validate_path(path: &str) -> anyhow::Result<String> {
     if !Path::new(path).exists() {
-        return Err(anyhow!("Path {:?} does not exist!", path));
+        return Err(anyhow!("Path {:?} does not exist.", path));
     }
 
     Ok(path.to_string())
 }
+
+pub fn get_dirname(path: &str) -> String {
+    let path = Path::new(path);
+    let dirname = path.parent().unwrap().to_str();
+    dirname.expect("Failed to convert path to str.").to_string()
+}
+
