@@ -1,6 +1,6 @@
 use crate::common::{self, is_directory};
 use anyhow::{anyhow, Result};
-use std::{collections::VecDeque, fs::{copy, remove_dir, remove_file}, path::PathBuf};
+use std::{collections::VecDeque, fs::{copy, remove_dir, remove_file}};
 
 
 #[allow(dead_code)]
@@ -14,32 +14,81 @@ use std::{collections::VecDeque, fs::{copy, remove_dir, remove_file}, path::Path
 
 pub enum Operation {
     MOVE(String, String),
-    COPY(),
-    REMOVE(),
-    SWAP(),
+    COPY(String, String),
+    REMOVE(String),
+    SWAP(String, String),
     NOOP(),
 }
 
 impl Operation {
-    /// Parses the T
-    pub fn parse_op(raw_token: &str) -> Result<Operation> {
+    // Tokenizes the raw command into the final
+    // Operation enum token, which are added to AST Node.
+    // To undergo semantic analysis and evaluation later.
+    pub fn tokenize(raw_token: &str) -> Result<Operation> {
     
         let mut tokens: VecDeque<&str> = raw_token.split_whitespace().collect();
         let op_token = tokens.pop_front();
 
         match op_token {
-            // Some(&"!mv") => 123,
-            Some("!cp") => Ok(Operation::COPY()),
-            // "!rm" => Ok(Operation::REMOVE),
-            // "!swp" => Ok(Operation::SWAP),
+            Some("!mv") => parse_move_args(tokens),
+            Some("!cp") => parse_copy_args(tokens),
+            Some("!rm") => parse_remove_args(tokens),
+            Some("!swp") => parse_swap_args(tokens),
             _ => Err(anyhow!("Invalid op_code token stream found: {}", (" "))),
         }
     }
 
 }
 
+fn parse_copy_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
+    
+    let token_count = 2;
+    if arg_tokens.len() != token_count {
+        return Err(anyhow!(format!("Found {} arguments while '!cp' accepts {}.", arg_tokens.len(), token_count)))
+    }
+    
+    let src = String::from(arg_tokens.pop_front().expect("Unable to pop 'src' arg for '!cp'"));
+    let dest = String::from(arg_tokens.pop_front().expect("Unable to pop 'dest' arg for '!cp'"));
+    Ok(Operation::COPY(src, dest))
+}
 
-#[allow(dead_code)]
+fn parse_move_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
+
+    let token_count = 2;
+    if arg_tokens.len() != token_count {
+        return Err(anyhow!(format!("Found {} arguments while '!cp' accepts {}.", arg_tokens.len(), token_count)))
+    }
+    
+    let src = String::from(arg_tokens.pop_front().expect("Unable to pop 'src' arg for '!mv'"));
+    let dest = String::from(arg_tokens.pop_front().expect("Unable to pop 'dest' arg for '!mv'"));
+    Ok(Operation::MOVE(src, dest))
+}
+
+fn parse_remove_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
+    
+    let token_count = 1;
+    if arg_tokens.len() != token_count {
+        return Err(anyhow!(format!("Found {} arguments while '!cp' accepts {}.", arg_tokens.len(), token_count)))
+    }
+    
+    let src = String::from(arg_tokens.pop_front().expect("Unable to pop 'src' arg for '!rm'"));
+    Ok(Operation::REMOVE(src))
+}
+
+fn parse_swap_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
+    
+    let token_count = 2;
+    if arg_tokens.len() != token_count {
+        return Err(anyhow!(format!("Found {} arguments while '!cp' accepts {}.", arg_tokens.len(), token_count)))
+    }
+    
+    let src = String::from(arg_tokens.pop_front().expect("Unable to pop 'src' arg for '!swp'"));
+    let dest = String::from(arg_tokens.pop_front().expect("Unable to pop 'dest' arg for '!swp'"));
+    Ok(Operation::MOVE(src, dest))
+}
+
+
+// #[allow(dead_code)]
 fn validate_mv(mut arg_tokens: VecDeque<&str>) -> anyhow::Result<Operation> {
     
     if arg_tokens.len() != 2 {
