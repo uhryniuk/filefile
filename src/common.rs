@@ -137,3 +137,10 @@ pub fn get_dirname(path: &str) -> String {
     dirname.expect("Failed to convert path to str.").to_string()
 }
 
+pub fn read_file(path: &str) -> String {
+    let mut file = File::open(&path).expect(format!("Cannot open {}", &path).as_str());
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .expect(format!("Cannot add content buffer for {}", &path).as_str());
+    return contents;
+}

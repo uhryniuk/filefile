@@ -24,17 +24,9 @@ use filefile::FilefileNamesIterator;
 fn main() -> Result<()> {
     common::init_global_state(); // Initialize the singleton object
 
-    let matches = clap::Command::new("ff")
+    let mut command = clap::Command::new("ff")
         .bin_name("ff")
         .subcommand_required(false)
-        .arg(
-            clap::Arg::new("file")
-                .action(clap::ArgAction::Set)
-                .required(false)
-                .short('i')
-                .long("input")
-                .help("Specify a Filefile to use."),
-        )
         .arg(
             clap::Arg::new("dry-run")
                 .action(clap::ArgAction::SetTrue)
@@ -59,21 +51,16 @@ fn main() -> Result<()> {
                 .long("verbose")
                 .help("Provide more detail action in stderr."),
         )
-        .arg(
-            clap::Arg::new("path")
-                .action(clap::ArgAction::Set)
-                .required(false)
-                .index(1)
-                .help("Path to contextual root the dir to operate within."),
-        )
         .subcommand(
             clap::Command::new("generate")
                 .arg(
                     clap::Arg::new("path")
                         .action(clap::ArgAction::Set)
                         .required(false)
-                        .index(1)
+                        .short('p')
+                        .long("path")
                         .help("Path to contextual root for generating the Filefile"),
+                        // .index(1)
                 )
                 .arg(
                     clap::Arg::new("file")
@@ -91,8 +78,27 @@ fn main() -> Result<()> {
                         .long("stdout")
                         .help("Write config to stdout"),
                 ),
-        )
-        .get_matches();
+        ).subcommand(
+            clap::Command::new("apply")
+                .arg(
+                    clap::Arg::new("path")
+                        .action(clap::ArgAction::Set)
+                        .required(false)
+                        .short('p')
+                        .long("path")
+                        .help("Path to contextual root for generating the Filefile"),
+                        // .index(1)
+                )
+                .arg(
+                    clap::Arg::new("file")
+                        .action(clap::ArgAction::Set)
+                        .required(false)
+                        .short('i')
+                        .long("input")
+                        .help("Location and filename of file system to write."),
+                )
+        );
+        let matches = command.clone().get_matches();
 
     // Setting global states.
     // 'ctx' must remain in scope, ref drop
@@ -122,14 +128,18 @@ fn main() -> Result<()> {
 
             generate.execute();
         }
-        _ => {
-            let filename = get_filefile_name(&matches, String::from("file"));
-            let root = commands::RootCommand {
+        Some(("apply", sub_matches)) => {
+            let filename = get_filefile_name(&sub_matches, String::from("file"));
+            let apply = commands::ApplyCommand {
                 filename: &filename,
                 path: &filename,
-                matches: &matches,
+                matches: &sub_matches,
             };
-            root.execute();
+            apply.execute();
+        }
+        _ => {
+            // Print help when root command is called.
+            let _ = command.print_help();
         }
     };
 

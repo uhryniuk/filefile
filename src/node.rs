@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Error, Result};
-use serde_yaml::{from_str, to_string, Mapping, Value};
+use serde_yaml::{from_str, to_string, value::TaggedValue, Mapping, Value};
 use std::{
     borrow::BorrowMut,
     collections::HashMap,
@@ -9,9 +9,7 @@ use std::{
     path::{self, Path, PathBuf},
 };
 
-use crate::common::{combine_path, get_basename, get_cwd, get_filefile_name, is_directory};
-
-use crate::commands::{Command, Generate};
+use crate::{common::{combine_path, get_basename, get_cwd, get_filefile_name, is_directory}, operations};
 
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -19,6 +17,7 @@ pub struct Node {
     pub ntype: NodeType,
     pub next: Vec<Node>,
     pub path: String,
+    pub op: Option<operations::Operation>,
 }
 
 impl Node {
@@ -28,6 +27,16 @@ impl Node {
             ntype,
             path: path.to_string(),
             next: Vec::new(),
+            op: None,
+        }
+    }
+    pub fn with_op(name: &str, ntype: NodeType, path: &str, op: operations::Operation) -> Node {
+        Node {
+            name: name.to_string(),
+            ntype,
+            path: path.to_string(),
+            next: Vec::new(),
+            op: Some(op),
         }
     }
 
@@ -119,7 +128,7 @@ pub fn create_yaml(node: Node) -> Value {
 
 pub fn write_to_yaml(root: Node, file_name: &str) -> anyhow::Result<()> {
     // // NOTE: remove the "thign" to just create it in root.
-    // // Ideally, ill have a '--prefix', '--p' flag to pass
+    // // Ideally, ill have a '--prefix', '--p' flag to pass 
     // // some dir, if the user doesn't want to use ff in the local dir.
     // create_filesystem(b.clone(), String::from(""));
     // // TODO match this error, don't unwrap. in the event we created bad yaml.
@@ -161,20 +170,10 @@ pub fn print_graph(node: Node, depth: usize) {
     }
 }
 
-/// Not sure what to return, rehaps the actually diff
-/// otherwise could just get a bool or something.
-#[allow(dead_code)]
-pub fn compare_graphs(a: Node, b: Node) {
+fn parse_tagged(value: TaggedValue, node: &mut Node) {
 
-    // traverse each of the graph
-    // sort the nodes in the 'next'
-    // compare the nodes in the 'next'
-    // compare the current nodes against each other.
-    // need to make sure the number of nodes are equal too at each layers
-    //  - this can be a short circuit feature
 }
 
-#[allow(dead_code)]
 pub fn parse_yaml(value: &Value) -> Vec<Node> {
     let mut nodes: Vec<Node> = Vec::new();
 
@@ -195,12 +194,15 @@ pub fn parse_yaml(value: &Value) -> Vec<Node> {
         }
         Value::Mapping(map) => {
             // conents of the file?, commands or even types?
+            println!("MAP: {:?}", map);
             for (key, value) in map {
                 let key_value = key.as_str().expect("Should get them out of graph");
                 let mut local_node = Node::new(key_value, NodeType::DIRECTORY, key_value);
                 local_node.add_children(parse_yaml(value));
                 nodes.push(local_node);
             }
+
+            // println!("{:?}", nodes);
             return nodes;
         }
         Value::Tagged(t) => {

@@ -3,7 +3,6 @@ use anyhow::{anyhow, Result};
 use std::{collections::VecDeque, fs::{copy, remove_dir, remove_file}};
 
 
-#[allow(dead_code)]
 /// Types of operations supported
 ///
 /// Move    = mv,   Moves a file to a new location.
@@ -11,7 +10,7 @@ use std::{collections::VecDeque, fs::{copy, remove_dir, remove_file}};
 /// REMOVE  = rm,   Deletes a file.
 /// SWAP    = swp,  Swaps 2 file's locations.
 /// NOOP    = None, No operation, default operation.
-
+#[derive(Debug, Clone)]
 pub enum Operation {
     MOVE(String, String),
     COPY(String, String),
@@ -36,6 +35,19 @@ impl Operation {
             Some("!swp") => parse_swap_args(tokens),
             _ => Err(anyhow!("Invalid op_code token stream found: {}", (" "))),
         }
+    }
+
+    /// Execute the Operation object based on it's provided context.
+    /// TODO this function should return a Result<Manifest>.
+    /// If the operation cannot be done, or if there is a runtime failure
+    /// aka semantic analysis failure or runtime error
+    /// aka compiler error or a runtime error
+    ///
+    /// This should return a Manifest if successful
+    ///     - So then we can log, which op moved what to where...
+    ///     - Perhaps there is other info we may care about?
+    pub fn execute(op: Operation) {
+        println!("{:?}", op);
     }
 
 }
