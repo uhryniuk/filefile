@@ -4,25 +4,16 @@ mod filefile;
 mod node;
 mod operations;
 
-use anyhow::{anyhow, Error, Result};
-use serde_yaml::{from_str, to_string, Mapping, Value};
-use std::{
-    borrow::BorrowMut,
-    collections::HashMap,
-    fs::{self, File},
-    io::{Read, Write},
-    iter::repeat,
-    path::{self, Path, PathBuf},
-};
+use anyhow::Result;
+use common::{get_basename, get_cwd, get_filefile_name, is_directory};
+use node::Node;
 
-use common::{combine_path, get_basename, get_cwd, get_filefile_name, is_directory};
-use node::{iterators::DfsIterator, Node, NodeType};
-
-use commands::{Command, Generate};
+use commands::Command;
 use filefile::FilefileNamesIterator;
 
 fn main() -> Result<()> {
-    common::init_global_state(); // Initialize the singleton object
+    // Initialize the singleton object
+    common::init_global_state();
 
     let mut command = clap::Command::new("ff")
         .bin_name("ff")
@@ -60,7 +51,6 @@ fn main() -> Result<()> {
                         .short('p')
                         .long("path")
                         .help("Path to contextual root for generating the Filefile"),
-                        // .index(1)
                 )
                 .arg(
                     clap::Arg::new("file")
@@ -78,7 +68,8 @@ fn main() -> Result<()> {
                         .long("stdout")
                         .help("Write config to stdout"),
                 ),
-        ).subcommand(
+        )
+        .subcommand(
             clap::Command::new("apply")
                 .arg(
                     clap::Arg::new("path")
@@ -87,7 +78,6 @@ fn main() -> Result<()> {
                         .short('p')
                         .long("path")
                         .help("Path to contextual root for generating the Filefile"),
-                        // .index(1)
                 )
                 .arg(
                     clap::Arg::new("file")
@@ -96,9 +86,9 @@ fn main() -> Result<()> {
                         .short('i')
                         .long("input")
                         .help("Location and filename of file system to write."),
-                )
+                ),
         );
-        let matches = command.clone().get_matches();
+    let matches = command.clone().get_matches();
 
     // Setting global states.
     // 'ctx' must remain in scope, ref drop
@@ -120,9 +110,7 @@ fn main() -> Result<()> {
         Some(("generate", sub_matches)) => {
             let filename = get_filefile_name(sub_matches, String::from("file"));
 
-            let generate = commands::Generate {
-                filename: &filename,
-                path: &filename,
+            let generate = commands::GenerateCommand {
                 matches: sub_matches,
             };
 
@@ -131,8 +119,6 @@ fn main() -> Result<()> {
         Some(("apply", sub_matches)) => {
             let filename = get_filefile_name(&sub_matches, String::from("file"));
             let apply = commands::ApplyCommand {
-                filename: &filename,
-                path: &filename,
                 matches: &sub_matches,
             };
             apply.execute();

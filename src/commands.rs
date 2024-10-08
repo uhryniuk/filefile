@@ -3,12 +3,9 @@ use crate::{
     filefile, get_basename, get_cwd, is_directory,
     node::{self, Node, NodeType},
 };
-use std::{fmt::format, fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, path::Path};
 
 use anyhow::Result;
-use serde_yaml::{from_str, Value};
-
-use crate::node::{create_filesystem, create_graph, create_yaml, parse_yaml, write_to_yaml};
 
 pub trait Command {
     fn execute(&self);
@@ -29,25 +26,19 @@ impl CommandHelper {
 
 #[derive(Debug)]
 pub struct ApplyCommand<'a> {
-    pub filename: &'a str,
-    pub path: &'a str,
     pub matches: &'a clap::ArgMatches,
 }
 
 impl<'a> ApplyCommand<'a> {
-   fn parse_args(&self) -> Result<(String, String)> {
+    fn parse_args(&self) -> Result<(String, String)> {
         let cwd = get_cwd().expect("Could not get CWD");
         let path = self
             .matches
             .get_one::<String>("path")
             .map(String::from)
             .unwrap_or_else(|| cwd.clone());
-        
-        // TODO this should get a location with the file too
-        // currently this just get's a file path
-        //
-        // Use funciton to get default file path if this is not provided.
-        let output = self
+
+        let input = self
             .matches
             .get_one::<String>("file")
             .map(String::from)
@@ -61,14 +52,13 @@ impl<'a> ApplyCommand<'a> {
         // ex. this/dir/blah -> only 'this/dir' needs to exist
         // validate_path(&output)?;
 
-        Ok((path, output))
+        Ok((path, input))
     }
 }
 
-
 impl<'a> Command for ApplyCommand<'a> {
     fn execute(&self) {
-        let (path, output) = match self.parse_args() {
+        let (path, input) = match self.parse_args() {
             Ok(p) => p,
             Err(err) => {
                 eprintln!("Error: Cannot parse args {}", err);
@@ -77,57 +67,39 @@ impl<'a> Command for ApplyCommand<'a> {
         };
 
         println!(
-            "Running root command {:?}, {:?}",
+            "Running apply command {:?}, {:?}",
             path.clone(),
-            output.clone()
+            input.clone()
         );
 
-        // Create the path based on the graph.
-        let node_type = if is_directory(&path) {
-            NodeType::DIRECTORY
-        } else {
-            NodeType::FILE
-        };
-        let mut root = Node::new(
-            get_basename(path.clone()).as_str(),
-            node_type,
-            &path.clone(),
-        );
-
-        // create references and write to file
-        create_graph(&mut root);
-        println!("self {:?}", self);
-
-        let data: Value = from_str::<Value>(&common::read_file(self.filename)).unwrap();
-
-            // .expect(format!("Could not read from {}", self.filename.to_string()));
-
-        let mut nodes: Vec<Node> = node::parse_yaml(&data);
-
-        let first = nodes.first().expect("trying to get first node");
-        node::print_graph(first.clone(), 0);
-
-
-        // TODO at this point we have the file system...
-        // Now what do we want to do this it?
-        // DFS iterate over it, keeping anything besides NOOP nodes.
-        // Then we call generate again, to create a new file...
-
-        let ctx = &mut common::get_global_state();
-        if !ctx.dry_run() {
-            println!("Running apply command");
-        }
-
+        // let data: Value = from_str::<Value>(&common::read_file(&input)).unwrap();
+        //     // .expect(format!("Could not read from {}", self.filename.to_string()));
+        //
+        // // Context is the the root directory to run the apply command in.
+        // let mut context = Node::new(&path);
+        // let mut nodes: Vec<Node> = node::parse_yaml(&data);
+        // context.add_children(nodes.clone());
+        //
+        // // node::print_graph(context, 0);
+        //
+        //
+        // // TODO at this point we have the file system...
+        // // Now what do we want to do this it?
+        // // DFS iterate over it, keeping anything besides NOOP nodes.
+        // // Then we call generate again, to create a new file...
+        //
+        // let ctx = &mut common::get_global_state();
+        // if !ctx.dry_run() {
+        //     println!("Running apply command");
+        // }
     }
 }
 
-pub struct Generate<'a> {
-    pub filename: &'a str,
-    pub path: &'a str,
+pub struct GenerateCommand<'a> {
     pub matches: &'a clap::ArgMatches,
 }
 
-impl<'a> Generate<'a> {
+impl<'a> GenerateCommand<'a> {
     fn parse_args(&self) -> Result<(String, String, bool)> {
         let cwd = get_cwd().expect("Could not get CWD");
         let path = self
@@ -135,10 +107,7 @@ impl<'a> Generate<'a> {
             .get_one::<String>("path")
             .map(String::from)
             .unwrap_or_else(|| cwd.clone());
-        
-        // TODO this should get a location with the file too
-        // currently this just get's a file path
-        //
+
         // Use funciton to get default file path if this is not provided.
         let output = self
             .matches
@@ -149,21 +118,16 @@ impl<'a> Generate<'a> {
             });
 
         let stdout = self.matches.get_one::<bool>("stdout").unwrap_or(&false);
-        println!("{:?}", stdout);
 
         validate_path(&path)?;
-
-        // TODO we only need to validate basename, not filename.
-        // ex. this/dir/blah -> only 'this/dir' needs to exist
-        // validate_path(&output)?;
 
         Ok((path, output, *stdout))
     }
 }
 
-impl<'a> Command for Generate<'a> {
+impl<'a> Command for GenerateCommand<'a> {
     fn execute(&self) {
-        let (path, output, to_stdout) = match self.parse_args() {
+        let (ctx_path, output, to_stdout) = match self.parse_args() {
             Ok(p) => p,
             Err(err) => {
                 eprintln!("Error: Cannot parse args {}", err);
@@ -173,35 +137,39 @@ impl<'a> Command for Generate<'a> {
 
         println!(
             "Running generate command {:?}, {:?}",
-            path.clone(),
+            ctx_path.clone(),
             output.clone()
         );
 
-        // Create the path based on the graph.
-        let node_type = if is_directory(&path) {
-            NodeType::DIRECTORY
-        } else {
-            NodeType::FILE
-        };
-        let mut root = Node::new(
-            get_basename(path.clone()).as_str(),
-            node_type,
-            &path.clone(),
-        );
+        let root = Node::new(&ctx_path);
 
-        // create references and write to file
-        create_graph(&mut root);
+        let children = Node::parse_tree(&root).unwrap();
+        let values = node::convert_nodes(children);
+        // root.add_children(children);
+        // let value = node::create_yaml(&serde_yaml::Value::Sequence(children));
+        let yaml = serde_yaml::to_string(&values).expect("Can't serialize 'Value' into string");
+        println!("{}", yaml);
 
-        let ctx = &mut common::get_global_state();
-        if !ctx.dry_run() {
-            println!("Writing to yaml... {}", output.clone());
-            let _ = write_to_yaml(root.clone(), &output);
-        }
+        // Create the top level node sequence.
+        // Convert to yaml
+        // write yaml string to file.
 
-        if to_stdout {
-            let yaml_str =
-                serde_yaml::to_string(&create_yaml(root.clone())).expect("Cannot convert to yaml");
-            println!("{}", yaml_str);
-        }
+        // let nodes = create_graph(&ctx_path);
+
+        // let _ = write_to_yaml(nodes, &output);
+        // root.name = get_basename(root.name);
+        // println!("ROOT: {:?}", root);
+
+        // let ctx = &mut common::get_global_state();
+        // if !ctx.dry_run() {
+        //     println!("Writing to yaml... {}", output.clone());
+        //     let _ = write_to_yaml(root.clone(), &output);
+        // }
+
+        // if to_stdout {
+        //     let yaml_str =
+        //         serde_yaml::to_string(&create_yaml(root.clone())).expect("Cannot convert to yaml");
+        //     println!("{}", yaml_str);
+        // }
     }
 }
