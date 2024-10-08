@@ -108,20 +108,16 @@ fn main() -> Result<()> {
     // Divergence based on subcommands
     match matches.subcommand() {
         Some(("generate", sub_matches)) => {
-            let filename = get_filefile_name(sub_matches, String::from("file"));
-
             let generate = commands::GenerateCommand {
                 matches: sub_matches,
             };
-
-            generate.execute();
+            generate.execute()?;
         }
         Some(("apply", sub_matches)) => {
-            let filename = get_filefile_name(&sub_matches, String::from("file"));
             let apply = commands::ApplyCommand {
                 matches: &sub_matches,
             };
-            apply.execute();
+            apply.execute()?;
         }
         _ => {
             // Print help when root command is called.

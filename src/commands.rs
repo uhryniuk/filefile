@@ -1,14 +1,14 @@
 use crate::{
-    common::{self, combine_path, validate_path},
-    filefile, get_basename, get_cwd, is_directory,
-    node::{self, Node, NodeType},
+    common::{combine_path, validate_path},
+    filefile, get_cwd,
+    node::{self, Node},
 };
-use std::{fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, io::Write};
 
-use anyhow::Result;
+use anyhow::{self, Result};
 
 pub trait Command {
-    fn execute(&self);
+    fn execute(&self) -> Result<()>;
 }
 
 struct CommandHelper;
@@ -57,7 +57,7 @@ impl<'a> ApplyCommand<'a> {
 }
 
 impl<'a> Command for ApplyCommand<'a> {
-    fn execute(&self) {
+    fn execute(&self) -> Result<()> {
         let (path, input) = match self.parse_args() {
             Ok(p) => p,
             Err(err) => {
@@ -71,6 +71,8 @@ impl<'a> Command for ApplyCommand<'a> {
             path.clone(),
             input.clone()
         );
+
+        Ok(())
 
         // let data: Value = from_str::<Value>(&common::read_file(&input)).unwrap();
         //     // .expect(format!("Could not read from {}", self.filename.to_string()));
@@ -126,7 +128,7 @@ impl<'a> GenerateCommand<'a> {
 }
 
 impl<'a> Command for GenerateCommand<'a> {
-    fn execute(&self) {
+    fn execute(&self) -> Result<()> {
         let (ctx_path, output, to_stdout) = match self.parse_args() {
             Ok(p) => p,
             Err(err) => {
@@ -141,35 +143,27 @@ impl<'a> Command for GenerateCommand<'a> {
             output.clone()
         );
 
+        // get filesystem tree
         let root = Node::new(&ctx_path);
-
         let children = Node::parse_tree(&root).unwrap();
+
+        // convert Node -> serde_yaml::Value -> String
         let values = node::convert_nodes(children);
-        // root.add_children(children);
-        // let value = node::create_yaml(&serde_yaml::Value::Sequence(children));
         let yaml = serde_yaml::to_string(&values).expect("Can't serialize 'Value' into string");
-        println!("{}", yaml);
 
-        // Create the top level node sequence.
-        // Convert to yaml
-        // write yaml string to file.
+        // check if we should write to file
+        let ctx = &mut crate::common::get_global_state();
+        if !ctx.dry_run() {
+            let mut f = std::fs::File::create(&output)?;
+            f.write_all(&yaml.as_bytes())?;
+        } else {
+            eprintln!("DRY: writing filefile");
+        }
 
-        // let nodes = create_graph(&ctx_path);
+        if to_stdout {
+            println!("{}", yaml);
+        }
 
-        // let _ = write_to_yaml(nodes, &output);
-        // root.name = get_basename(root.name);
-        // println!("ROOT: {:?}", root);
-
-        // let ctx = &mut common::get_global_state();
-        // if !ctx.dry_run() {
-        //     println!("Writing to yaml... {}", output.clone());
-        //     let _ = write_to_yaml(root.clone(), &output);
-        // }
-
-        // if to_stdout {
-        //     let yaml_str =
-        //         serde_yaml::to_string(&create_yaml(root.clone())).expect("Cannot convert to yaml");
-        //     println!("{}", yaml_str);
-        // }
+        Ok(())
     }
 }
