@@ -3,7 +3,7 @@ use crate::{
     filefile, get_cwd,
     node::{self, Node},
 };
-use std::{fs::File, io::Read, io::Write};
+use std::{fs::File, io::Read, io::Write, path::PathBuf};
 
 use anyhow::{self, Result};
 
@@ -48,10 +48,6 @@ impl<'a> ApplyCommand<'a> {
 
         validate_path(&path)?;
 
-        // TODO we only need to validate basename, not filename.
-        // ex. this/dir/blah -> only 'this/dir' needs to exist
-        // validate_path(&output)?;
-
         Ok((path, input))
     }
 }
@@ -72,11 +68,47 @@ impl<'a> Command for ApplyCommand<'a> {
             input.clone()
         );
 
-        Ok(())
+        // read input file into string buffer
+        let mut raw_yaml = String::new();
+        let mut f = File::open(&input)?;
+        f.read_to_string(&mut raw_yaml)?;
 
-        // let data: Value = from_str::<Value>(&common::read_file(&input)).unwrap();
-        //     // .expect(format!("Could not read from {}", self.filename.to_string()));
-        //
+        println!("{}", raw_yaml);
+
+        let mut values: serde_yaml::Value =
+            serde_yaml::from_str(&raw_yaml).expect("Couldn't convert yaml string to Value");
+        let root_nodes = node::convert_value(&mut values);
+
+        let mut node_queue: Vec<Vec<Node>> = vec![root_nodes.clone()];
+        while let Some(mut nodes) = node_queue.pop() {
+            for node in nodes.iter_mut() {
+                // Update the directory to use provided path...
+                node.prefix_path(path.as_str());
+
+                // TODO for debugging only...
+                println!("{:?}", node);
+
+                match node.node_type {
+                    node::NodeType::FILE => {
+                        std::fs::write(node.path_as_str().as_str(), "")?;
+                    }
+                    node::NodeType::DIRECTORY => {
+                        std::fs::create_dir_all(node.path_as_str().as_str())?;
+                    }
+                }
+
+                // Push the children of the current node onto the queue
+                if !node.children.is_empty() {
+                    node_queue.push(node.children.clone());
+                }
+            }
+        }
+
+        // 1. Convert to values
+        // 2. Convert to nodes.
+        // Tagged -> Operation
+        // 3. Iterate & Execute
+
         // // Context is the the root directory to run the apply command in.
         // let mut context = Node::new(&path);
         // let mut nodes: Vec<Node> = node::parse_yaml(&data);
@@ -94,6 +126,8 @@ impl<'a> Command for ApplyCommand<'a> {
         // if !ctx.dry_run() {
         //     println!("Running apply command");
         // }
+
+        Ok(())
     }
 }
 
