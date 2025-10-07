@@ -155,7 +155,6 @@ impl<'a> GenerateCommand<'a> {
 
         let stdout = self.matches.get_one::<bool>("stdout").unwrap_or(&false);
 
-
         validate_path(&path)?;
 
         Ok((path, output, *stdout))

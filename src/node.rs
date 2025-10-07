@@ -6,10 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{
-    common::{get_cwd, is_directory},
-    operations,
-};
+use crate::{common::is_directory, operations};
 
 #[derive(Debug, Clone)]
 pub struct Node {
