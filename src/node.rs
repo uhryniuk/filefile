@@ -15,6 +15,7 @@ pub struct Node {
     pub node_type: NodeType,
     pub children: Vec<Node>,
     pub op: Option<operations::Operation>,
+    pub contents: Option<String>,
 }
 
 impl Node {
@@ -43,6 +44,7 @@ impl Node {
             node_type: NodeType::FILE, // when > 0 children, set to DIRECTORY
             children: Vec::new(),
             op: None,
+            contents: None,
         }
     }
 
@@ -225,6 +227,13 @@ pub fn convert_value(value: &mut Value) -> Vec<Node> {
                 let key_value = key.as_str().expect("Should get them out of graph");
                 let mut local_node = Node::new(key_value);
                 match value {
+                    Value::String(s) => {
+                        local_node.contents = Some(s.clone());
+                        local_node.node_type = NodeType::FILE;
+                    }
+                    Value::Null => {
+                        local_node.node_type = NodeType::FILE;
+                    }
                     Value::Sequence(seq) => {
                         // Update the path before it's turned into a node.
                         // This way it maintains the proper basename and abs path.
@@ -285,4 +294,32 @@ pub fn convert_value(value: &mut Value) -> Vec<Node> {
     };
 
     return nodes;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(yaml: &str) -> Vec<Node> {
+        let mut v: Value = serde_yaml::from_str(yaml).expect("yaml parse");
+        convert_value(&mut v)
+    }
+
+    #[test]
+    fn string_map_value_becomes_file_with_contents() {
+        let nodes = parse("foo: \"bar\"\n");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].basename, "foo");
+        assert_eq!(nodes[0].node_type, NodeType::FILE);
+        assert_eq!(nodes[0].contents.as_deref(), Some("bar"));
+    }
+
+    #[test]
+    fn null_map_value_becomes_empty_file() {
+        let nodes = parse("foo:\n");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].basename, "foo");
+        assert_eq!(nodes[0].node_type, NodeType::FILE);
+        assert!(nodes[0].contents.is_none());
+    }
 }
