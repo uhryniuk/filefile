@@ -49,6 +49,13 @@ fn main() -> Result<()> {
                 .long("verbose")
                 .help("Provide more detail action in stderr."),
         )
+        .arg(
+            clap::Arg::new("allow-remote-ops")
+                .action(clap::ArgAction::SetTrue)
+                .required(false)
+                .long("allow-remote-ops")
+                .help("Permit !git and !sh ops in Filefiles fetched over http(s)."),
+        )
         .subcommand(
             clap::Command::new("generate")
                 .arg(
@@ -112,6 +119,8 @@ fn main() -> Result<()> {
         }
     }
 
+    let allow_remote_ops = matches.get_flag("allow-remote-ops");
+
     // Divergence based on subcommands
     match matches.subcommand() {
         Some(("generate", sub_matches)) => {
@@ -121,11 +130,11 @@ fn main() -> Result<()> {
             generate.execute()?;
         }
         Some(("apply", sub_matches)) => {
-            commands::ApplyCommand::from_subcommand(sub_matches)?.execute()?;
+            commands::ApplyCommand::from_subcommand(sub_matches, allow_remote_ops)?.execute()?;
         }
         _ => {
             if let Some(file) = matches.get_one::<String>("filefile") {
-                commands::ApplyCommand::from_file(file)?.execute()?;
+                commands::ApplyCommand::from_file(file, allow_remote_ops)?.execute()?;
             } else {
                 let _ = command.print_help();
             }

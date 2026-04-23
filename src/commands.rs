@@ -33,10 +33,11 @@ impl CommandHelper {
 pub struct ApplyCommand {
     pub path: String,
     pub input: String,
+    pub allow_remote_ops: bool,
 }
 
 impl ApplyCommand {
-    pub fn from_subcommand(matches: &clap::ArgMatches) -> Result<Self> {
+    pub fn from_subcommand(matches: &clap::ArgMatches, allow_remote_ops: bool) -> Result<Self> {
         let cwd = get_cwd().expect("Could not get CWD");
         let path = matches
             .get_one::<String>("path")
@@ -49,23 +50,34 @@ impl ApplyCommand {
                 combine_path(cwd.as_str(), filefile::FilefileNames::default().as_str())
             });
         validate_path(&path)?;
-        Ok(Self { path, input })
+        Ok(Self {
+            path,
+            input,
+            allow_remote_ops,
+        })
     }
 
-    pub fn from_file(file: &str) -> Result<Self> {
+    pub fn from_file(file: &str, allow_remote_ops: bool) -> Result<Self> {
         let cwd = get_cwd().expect("Could not get CWD");
         validate_path(&cwd)?;
         Ok(Self {
             path: cwd,
             input: file.to_string(),
+            allow_remote_ops,
         })
     }
 }
 
-fn apply_node(node: &Node, parent: &Path, dry: bool) -> Result<()> {
+fn apply_node(node: &Node, parent: &Path, dry: bool, ops_allowed: bool) -> Result<()> {
     let path = parent.join(&node.basename);
     // If an op is attached, let it produce the artifact — skip default create/write.
     if let Some(op) = &node.op {
+        if !ops_allowed {
+            anyhow::bail!(
+                "remote Filefile contains {:?}; re-run with --allow-remote-ops to permit",
+                op
+            );
+        }
         return op.execute(&path, dry);
     }
     match node.node_type {
@@ -76,7 +88,7 @@ fn apply_node(node: &Node, parent: &Path, dry: bool) -> Result<()> {
                 fs::create_dir_all(&path)?;
             }
             for child in &node.children {
-                apply_node(child, &path, dry)?;
+                apply_node(child, &path, dry, ops_allowed)?;
             }
         }
         node::NodeType::FILE => {
@@ -105,7 +117,8 @@ fn fetch_remote(url: &str) -> Result<String> {
 
 impl Command for ApplyCommand {
     fn execute(&self) -> Result<()> {
-        let raw_yaml = if is_remote(&self.input) {
+        let remote = is_remote(&self.input);
+        let raw_yaml = if remote {
             fetch_remote(&self.input)?
         } else {
             let mut s = String::new();
@@ -118,9 +131,10 @@ impl Command for ApplyCommand {
         let root_nodes = node::convert_value(&mut values);
 
         let dry = common::get_global_state().dry_run();
+        let ops_allowed = !remote || self.allow_remote_ops;
         let root = Path::new(&self.path);
         for node in &root_nodes {
-            apply_node(node, root, dry)?;
+            apply_node(node, root, dry, ops_allowed)?;
         }
 
         Ok(())

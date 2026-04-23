@@ -42,3 +42,41 @@ fn ff_applies_a_remote_filefile() {
     assert!(root.join("greet").is_dir());
     assert_eq!(fs::read_to_string(root.join("greet/hello")).unwrap(), "world");
 }
+
+#[test]
+fn remote_sh_op_is_rejected_by_default() {
+    let td = tempfile::tempdir().unwrap();
+    let root = td.path();
+    let url = serve_once("marker: !sh \"printf pwn > marker\"\n");
+
+    let output = Command::new(BIN)
+        .current_dir(root)
+        .arg(&url)
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "apply should refuse remote !sh");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--allow-remote-ops"),
+        "stderr should point the user at --allow-remote-ops: {}",
+        stderr
+    );
+    // Side-effect must not have happened.
+    assert!(!root.join("marker").exists());
+}
+
+#[test]
+fn remote_sh_op_runs_with_allow_remote_ops() {
+    let td = tempfile::tempdir().unwrap();
+    let root = td.path();
+    let url = serve_once("marker: !sh \"printf hi > marker\"\n");
+
+    let status = Command::new(BIN)
+        .current_dir(root)
+        .args(["--allow-remote-ops"])
+        .arg(&url)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(fs::read_to_string(root.join("marker")).unwrap(), "hi");
+}
