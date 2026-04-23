@@ -30,30 +30,35 @@ impl CommandHelper {
 }
 
 #[derive(Debug)]
-pub struct ApplyCommand<'a> {
-    pub matches: &'a clap::ArgMatches,
+pub struct ApplyCommand {
+    pub path: String,
+    pub input: String,
 }
 
-impl<'a> ApplyCommand<'a> {
-    fn parse_args(&self) -> Result<(String, String)> {
+impl ApplyCommand {
+    pub fn from_subcommand(matches: &clap::ArgMatches) -> Result<Self> {
         let cwd = get_cwd().expect("Could not get CWD");
-        let path = self
-            .matches
+        let path = matches
             .get_one::<String>("path")
-            .map(String::from)
+            .cloned()
             .unwrap_or_else(|| cwd.clone());
-
-        let input = self
-            .matches
+        let input = matches
             .get_one::<String>("file")
-            .map(String::from)
+            .cloned()
             .unwrap_or_else(|| {
                 combine_path(cwd.as_str(), filefile::FilefileNames::default().as_str())
             });
-
         validate_path(&path)?;
+        Ok(Self { path, input })
+    }
 
-        Ok((path, input))
+    pub fn from_file(file: &str) -> Result<Self> {
+        let cwd = get_cwd().expect("Could not get CWD");
+        validate_path(&cwd)?;
+        Ok(Self {
+            path: cwd,
+            input: file.to_string(),
+        })
     }
 }
 
@@ -86,18 +91,10 @@ fn apply_node(node: &Node, parent: &Path, dry: bool) -> Result<()> {
     Ok(())
 }
 
-impl<'a> Command for ApplyCommand<'a> {
+impl Command for ApplyCommand {
     fn execute(&self) -> Result<()> {
-        let (path, input) = match self.parse_args() {
-            Ok(p) => p,
-            Err(err) => {
-                eprintln!("Error: Cannot parse args {}", err);
-                std::process::exit(1);
-            }
-        };
-
         let mut raw_yaml = String::new();
-        let mut f = File::open(&input)?;
+        let mut f = File::open(&self.input)?;
         f.read_to_string(&mut raw_yaml)?;
 
         let mut values: serde_yaml::Value =
@@ -105,7 +102,7 @@ impl<'a> Command for ApplyCommand<'a> {
         let root_nodes = node::convert_value(&mut values);
 
         let dry = common::get_global_state().dry_run();
-        let root = Path::new(&path);
+        let root = Path::new(&self.path);
         for node in &root_nodes {
             apply_node(node, root, dry)?;
         }

@@ -19,6 +19,13 @@ fn main() -> Result<()> {
         .bin_name("ff")
         .subcommand_required(false)
         .arg(
+            clap::Arg::new("filefile")
+                .action(clap::ArgAction::Set)
+                .required(false)
+                .index(1)
+                .help("Path to a Filefile to apply (shorthand for `ff apply -i <FILE>`)"),
+        )
+        .arg(
             clap::Arg::new("dry-run")
                 .action(clap::ArgAction::SetTrue)
                 .required(false)
@@ -114,14 +121,14 @@ fn main() -> Result<()> {
             generate.execute()?;
         }
         Some(("apply", sub_matches)) => {
-            let apply = commands::ApplyCommand {
-                matches: &sub_matches,
-            };
-            apply.execute()?;
+            commands::ApplyCommand::from_subcommand(sub_matches)?.execute()?;
         }
         _ => {
-            // Print help when root command is called.
-            let _ = command.print_help();
+            if let Some(file) = matches.get_one::<String>("filefile") {
+                commands::ApplyCommand::from_file(file)?.execute()?;
+            } else {
+                let _ = command.print_help();
+            }
         }
     };
 
