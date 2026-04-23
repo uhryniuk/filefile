@@ -104,7 +104,11 @@ impl Node {
 
 impl From<PathBuf> for Node {
     fn from(path_buf: PathBuf) -> Self {
-        Node::new(&path_buf.to_string_lossy().into_owned())
+        let mut node = Node::new(&path_buf.to_string_lossy().into_owned());
+        if path_buf.is_dir() {
+            node.node_type = NodeType::DIRECTORY;
+        }
+        node
     }
 }
 
@@ -170,31 +174,31 @@ mod yaml {}
 //     children
 // }
 
-// Traverse a FileGraph and convert it's structure into a Value
-// Will either return
-// - Value<String> on File
-// - Value<Mapping<String, Sequence<String>>> on Directory
-//
+/// Serialize a `Node` into a mapping-form entry: files become `Value::Null`,
+/// directories become a nested `Value::Mapping`. File contents are NOT
+/// round-tripped in this MVP.
 pub fn convert_node(node: Node) -> Value {
-    let mut list: Vec<Value> = Vec::new();
     match node.node_type {
-        NodeType::FILE => Value::from(node.basename.to_string()),
+        NodeType::FILE => Value::Null,
         NodeType::DIRECTORY => {
-            let mut map: Mapping = Mapping::new();
-            for n in node.children.iter() {
-                list.push(convert_node(n.clone()));
+            let mut map = Mapping::new();
+            for child in node.children.into_iter() {
+                let key = Value::String(child.basename.clone());
+                map.insert(key, convert_node(child));
             }
-            map.insert(Value::String(node.basename.clone()), Value::Sequence(list));
-            Value::from(map)
+            Value::Mapping(map)
         }
     }
 }
-pub fn convert_nodes(mut nodes: Vec<Node>) -> Vec<Value> {
-    let mut list: Vec<Value> = Vec::new();
-    for node in nodes.iter_mut() {
-        list.push(convert_node(node.clone()));
+
+/// Serialize a forest of top-level `Node`s into a single `Value::Mapping`.
+pub fn convert_nodes(nodes: Vec<Node>) -> Value {
+    let mut map = Mapping::new();
+    for node in nodes.into_iter() {
+        let key = Value::String(node.basename.clone());
+        map.insert(key, convert_node(node));
     }
-    list
+    Value::Mapping(map)
 }
 
 /// Convert a YAML `Value` into a forest of `Node`s.

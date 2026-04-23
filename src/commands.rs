@@ -154,25 +154,23 @@ impl<'a> Command for GenerateCommand<'a> {
             }
         };
 
-        println!(
+        eprintln!(
             "Running generate command {:?}, {:?}",
             ctx_path.clone(),
             output.clone()
         );
 
-        // get filesystem tree
-        let root = Node::new(&ctx_path);
+        let mut root = Node::new(&ctx_path);
+        root.node_type = node::NodeType::get(&ctx_path);
         let children = Node::parse_tree(&root).unwrap();
 
-        // convert Node -> serde_yaml::Value -> String
-        let values = node::convert_nodes(children);
-        let yaml = serde_yaml::to_string(&values).expect("Can't serialize 'Value' into string");
+        let value = node::convert_nodes(children);
+        let yaml = serde_yaml::to_string(&value).expect("Can't serialize 'Value' into string");
 
-        // check if we should write to file
-        let ctx = &mut crate::common::get_global_state();
-        if !ctx.dry_run() {
-            let mut f = std::fs::File::create(&output)?;
-            f.write_all(&yaml.as_bytes())?;
+        let dry = common::get_global_state().dry_run();
+        if !dry {
+            let mut f = fs::File::create(&output)?;
+            f.write_all(yaml.as_bytes())?;
         } else {
             eprintln!("DRY: writing filefile");
         }
