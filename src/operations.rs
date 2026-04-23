@@ -1,151 +1,86 @@
-use crate::common::{self, is_directory};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::VecDeque,
-    fs::{copy, remove_dir, remove_file},
-};
+use std::collections::VecDeque;
 
-/// Types of operations supported
+/// Operations attached to a node via YAML tags.
 ///
-/// Move    = mv,   Moves a file to a new location.
-/// COPY    = cp,   Copies a a file & file name (optional).
-/// REMOVE  = rm,   Deletes a file.
-/// SWAP    = swp,  Swaps 2 file's locations.
-/// NOOP    = None, No operation, default operation.
+/// `Git(url)` → `!git <url>`: clone `<url>` into the node's path at apply time.
+/// `Sh(cmd)` → `!sh "<cmd>"`: run `<cmd>` with cwd = the node's parent directory.
+/// `Noop` → default, do nothing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Operation {
-    MOVE(String, String),
-    COPY(String, String),
-    REMOVE(String),
-    SWAP(String, String),
-    NOOP(),
+    Git(String),
+    Sh(String),
+    Noop,
 }
 
 impl Operation {
-    // TODO change the names of these functiosn
-    // A little misleading, this ok
+    #[allow(dead_code)]
     pub fn from_raw_token(raw_token: &str) -> Result<Operation> {
         let mut tokens: VecDeque<&str> = raw_token.split_whitespace().collect();
         let op_token = tokens
             .pop_front()
-            .expect("Op token should always be at front");
-        let token_str: &str = &tokens.into_iter().collect::<String>();
-        Operation::from_tokens(op_token, token_str)
+            .ok_or_else(|| anyhow!("Empty op token"))?;
+        let rest: String = tokens.into_iter().collect::<Vec<_>>().join(" ");
+        Operation::from_tokens(op_token, &rest)
     }
 
     pub fn from_tokens(op_token: &str, op_args: &str) -> Result<Operation> {
-        let tokens: VecDeque<&str> = op_args.split_whitespace().collect();
         match op_token {
-            "!mv" => parse_move_args(tokens),
-            "!cp" => parse_copy_args(tokens),
-            "!rm" => parse_remove_args(tokens),
-            "!swp" => parse_swap_args(tokens),
-            _ => Err(anyhow!(
-                "Invalid op_code token stream found: {} {}",
-                op_token,
-                op_args
-            )),
+            "!git" => {
+                let url = op_args.trim();
+                if url.is_empty() {
+                    return Err(anyhow!("'!git' requires a URL"));
+                }
+                Ok(Operation::Git(url.to_string()))
+            }
+            "!sh" => {
+                let cmd = op_args.trim();
+                if cmd.is_empty() {
+                    return Err(anyhow!("'!sh' requires a command"));
+                }
+                Ok(Operation::Sh(cmd.to_string()))
+            }
+            other => Err(anyhow!("Unknown op tag: {}", other)),
         }
     }
 
-    /// Execute the Operation object based on it's provided context.
-    /// TODO this function should return a Result<Manifest>.
-    /// If the operation cannot be done, or if there is a runtime failure
-    /// aka semantic analysis failure or runtime error
-    /// aka compiler error or a runtime error
-    ///
-    /// This should return a Manifest if successful
-    ///     - So then we can log, which op moved what to where...
-    ///     - Perhaps there is other info we may care about?
-    pub fn execute(op: Operation) {
-        println!("{:?}", op);
+    /// Execute the operation against a node at `node_path`. Honors `dry`.
+    /// Stub for now; real implementation lands in a follow-up commit.
+    pub fn execute(&self, _node_path: &std::path::Path, _dry: bool) -> Result<()> {
+        Ok(())
     }
 }
 
-fn parse_copy_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
-    let token_count = 2;
-    if arg_tokens.len() != token_count {
-        return Err(anyhow!(format!(
-            "Found {} arguments while '!cp' accepts {}.",
-            arg_tokens.len(),
-            token_count
-        )));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_git_tag() {
+        let op = Operation::from_tokens("!git", "https://example.com/repo.git").unwrap();
+        assert_eq!(op, Operation::Git("https://example.com/repo.git".into()));
     }
 
-    let src = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'src' arg for '!cp'"),
-    );
-    let dest = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'dest' arg for '!cp'"),
-    );
-    Ok(Operation::COPY(src, dest))
-}
-
-fn parse_move_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
-    let token_count = 2;
-    if arg_tokens.len() != token_count {
-        return Err(anyhow!(format!(
-            "Found {} arguments while '!cp' accepts {}.",
-            arg_tokens.len(),
-            token_count
-        )));
+    #[test]
+    fn parses_sh_tag() {
+        let op = Operation::from_tokens("!sh", "echo hi > out").unwrap();
+        assert_eq!(op, Operation::Sh("echo hi > out".into()));
     }
 
-    let src = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'src' arg for '!mv'"),
-    );
-    let dest = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'dest' arg for '!mv'"),
-    );
-    Ok(Operation::MOVE(src, dest))
-}
-
-fn parse_remove_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
-    let token_count = 1;
-    if arg_tokens.len() != token_count {
-        return Err(anyhow!(format!(
-            "Found {} arguments while '!cp' accepts {}.",
-            arg_tokens.len(),
-            token_count
-        )));
+    #[test]
+    fn unknown_tag_errors() {
+        assert!(Operation::from_tokens("!nope", "whatever").is_err());
     }
 
-    let src = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'src' arg for '!rm'"),
-    );
-    Ok(Operation::REMOVE(src))
-}
-
-fn parse_swap_args(mut arg_tokens: VecDeque<&str>) -> Result<Operation> {
-    let token_count = 2;
-    if arg_tokens.len() != token_count {
-        return Err(anyhow!(format!(
-            "Found {} arguments while '!cp' accepts {}.",
-            arg_tokens.len(),
-            token_count
-        )));
+    #[test]
+    fn git_requires_url() {
+        assert!(Operation::from_tokens("!git", "").is_err());
+        assert!(Operation::from_tokens("!git", "   ").is_err());
     }
 
-    let src = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'src' arg for '!swp'"),
-    );
-    let dest = String::from(
-        arg_tokens
-            .pop_front()
-            .expect("Unable to pop 'dest' arg for '!swp'"),
-    );
-    Ok(Operation::MOVE(src, dest))
+    #[test]
+    fn sh_requires_command() {
+        assert!(Operation::from_tokens("!sh", "").is_err());
+    }
 }
