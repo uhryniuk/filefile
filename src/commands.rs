@@ -91,11 +91,27 @@ fn apply_node(node: &Node, parent: &Path, dry: bool) -> Result<()> {
     Ok(())
 }
 
+pub fn is_remote(input: &str) -> bool {
+    input.starts_with("http://") || input.starts_with("https://")
+}
+
+fn fetch_remote(url: &str) -> Result<String> {
+    let body = ureq::get(url)
+        .call()
+        .map_err(|e| anyhow::anyhow!("fetch {}: {}", url, e))?
+        .into_string()?;
+    Ok(body)
+}
+
 impl Command for ApplyCommand {
     fn execute(&self) -> Result<()> {
-        let mut raw_yaml = String::new();
-        let mut f = File::open(&self.input)?;
-        f.read_to_string(&mut raw_yaml)?;
+        let raw_yaml = if is_remote(&self.input) {
+            fetch_remote(&self.input)?
+        } else {
+            let mut s = String::new();
+            File::open(&self.input)?.read_to_string(&mut s)?;
+            s
+        };
 
         let mut values: serde_yaml::Value =
             serde_yaml::from_str(&raw_yaml).expect("Couldn't convert yaml string to Value");
