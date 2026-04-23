@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::path::Path;
+use std::process::Command;
 
 /// Operations attached to a node via YAML tags.
 ///
@@ -46,8 +48,39 @@ impl Operation {
     }
 
     /// Execute the operation against a node at `node_path`. Honors `dry`.
-    /// Stub for now; real implementation lands in a follow-up commit.
-    pub fn execute(&self, _node_path: &std::path::Path, _dry: bool) -> Result<()> {
+    pub fn execute(&self, node_path: &Path, dry: bool) -> Result<()> {
+        match self {
+            Operation::Git(url) => {
+                if dry {
+                    eprintln!("DRY git clone {} {:?}", url, node_path);
+                    return Ok(());
+                }
+                let status = Command::new("git")
+                    .arg("clone")
+                    .arg(url)
+                    .arg(node_path)
+                    .status()?;
+                if !status.success() {
+                    anyhow::bail!("git clone failed: {}", url);
+                }
+            }
+            Operation::Sh(cmd) => {
+                let cwd = node_path.parent().unwrap_or(Path::new("."));
+                if dry {
+                    eprintln!("DRY sh -c {:?} (cwd {:?})", cmd, cwd);
+                    return Ok(());
+                }
+                let status = Command::new("sh")
+                    .arg("-c")
+                    .arg(cmd)
+                    .current_dir(cwd)
+                    .status()?;
+                if !status.success() {
+                    anyhow::bail!("sh failed: {}", cmd);
+                }
+            }
+            Operation::Noop => {}
+        }
         Ok(())
     }
 }
@@ -82,5 +115,36 @@ mod tests {
     #[test]
     fn sh_requires_command() {
         assert!(Operation::from_tokens("!sh", "").is_err());
+    }
+
+    #[test]
+    fn sh_execute_runs_in_parent_dir() {
+        let td = tempfile::tempdir().unwrap();
+        let node_path = td.path().join("marker");
+        let op = Operation::Sh("printf hi > marker".into());
+        op.execute(&node_path, false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(td.path().join("marker")).unwrap(),
+            "hi"
+        );
+    }
+
+    #[test]
+    fn sh_execute_dry_run_does_not_write() {
+        let td = tempfile::tempdir().unwrap();
+        let node_path = td.path().join("marker");
+        let op = Operation::Sh("printf hi > marker".into());
+        op.execute(&node_path, true).unwrap();
+        assert!(!td.path().join("marker").exists());
+    }
+
+    #[test]
+    #[ignore] // requires network
+    fn git_execute_clones() {
+        let td = tempfile::tempdir().unwrap();
+        let node_path = td.path().join("repo");
+        let op = Operation::Git("https://github.com/octocat/Hello-World.git".into());
+        op.execute(&node_path, false).unwrap();
+        assert!(node_path.join(".git").is_dir());
     }
 }
