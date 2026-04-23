@@ -59,6 +59,10 @@ impl<'a> ApplyCommand<'a> {
 
 fn apply_node(node: &Node, parent: &Path, dry: bool) -> Result<()> {
     let path = parent.join(&node.basename);
+    // If an op is attached, let it produce the artifact — skip default create/write.
+    if let Some(op) = &node.op {
+        return op.execute(&path, dry);
+    }
     match node.node_type {
         node::NodeType::DIRECTORY => {
             if dry {
