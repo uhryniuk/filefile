@@ -52,7 +52,7 @@ what kind of node it is:
 | `{ ... }` (mapping)   | directory containing the nested mapping       |
 | `null` (empty value)  | empty file                                    |
 | `!git <url>`          | `git clone <url>` into this node's path       |
-| `!sh "<cmd>"`         | run `<cmd>` with cwd = the node's parent dir  |
+| `!sh "<cmd>"`         | run `<cmd>`; its stdout becomes the file's contents |
 
 ### Example
 
@@ -63,7 +63,8 @@ hello:
     I: "am"
   empty_file:
 scripted:
-  marker: !sh "printf hi > marker"
+  marker: !sh "printf hi"
+  today: !sh "date -u +%Y-%m-%d"
 ```
 
 Applying this yields:
@@ -76,8 +77,13 @@ Applying this yields:
 │   │   └── I          # "am"
 │   └── empty_file     # 0 bytes
 └── scripted/
-    └── marker         # "hi"
+    ├── marker         # "hi"   (captured stdout)
+    └── today          # "2026-04-23"
 ```
+
+The command runs with cwd set to the node's parent directory, so sibling
+files can be referenced by name. Stderr is inherited, so build errors
+still surface on your terminal.
 
 ### Subcommands
 

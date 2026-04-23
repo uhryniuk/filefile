@@ -2,12 +2,13 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// Operations attached to a node via YAML tags.
 ///
 /// `Git(url)` → `!git <url>`: clone `<url>` into the node's path at apply time.
-/// `Sh(cmd)` → `!sh "<cmd>"`: run `<cmd>` with cwd = the node's parent directory.
+/// `Sh(cmd)` → `!sh "<cmd>"`: run `<cmd>` with cwd = the node's parent directory
+///   and write the captured stdout to the node's path. Stderr is inherited.
 /// `Noop` → default, do nothing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Operation {
@@ -67,17 +68,20 @@ impl Operation {
             Operation::Sh(cmd) => {
                 let cwd = node_path.parent().unwrap_or(Path::new("."));
                 if dry {
-                    eprintln!("DRY sh -c {:?} (cwd {:?})", cmd, cwd);
+                    eprintln!("DRY sh -c {:?} (cwd {:?}) -> {:?}", cmd, cwd, node_path);
                     return Ok(());
                 }
-                let status = Command::new("sh")
+                let out = Command::new("sh")
                     .arg("-c")
                     .arg(cmd)
                     .current_dir(cwd)
-                    .status()?;
-                if !status.success() {
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::inherit())
+                    .output()?;
+                if !out.status.success() {
                     anyhow::bail!("sh failed: {}", cmd);
                 }
+                std::fs::write(node_path, &out.stdout)?;
             }
             Operation::Noop => {}
         }
@@ -118,24 +122,42 @@ mod tests {
     }
 
     #[test]
-    fn sh_execute_runs_in_parent_dir() {
+    fn sh_execute_writes_stdout_to_node_path() {
         let td = tempfile::tempdir().unwrap();
         let node_path = td.path().join("marker");
-        let op = Operation::Sh("printf hi > marker".into());
+        let op = Operation::Sh("printf hi".into());
         op.execute(&node_path, false).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(td.path().join("marker")).unwrap(),
-            "hi"
-        );
+        assert_eq!(std::fs::read_to_string(&node_path).unwrap(), "hi");
+    }
+
+    #[test]
+    fn sh_execute_runs_with_cwd_of_parent_dir() {
+        // The command reads from a sibling file — only works if cwd is the
+        // node's parent (where that sibling lives).
+        let td = tempfile::tempdir().unwrap();
+        std::fs::write(td.path().join("sibling"), "from-sibling").unwrap();
+        let node_path = td.path().join("out");
+        let op = Operation::Sh("cat sibling".into());
+        op.execute(&node_path, false).unwrap();
+        assert_eq!(std::fs::read_to_string(&node_path).unwrap(), "from-sibling");
     }
 
     #[test]
     fn sh_execute_dry_run_does_not_write() {
         let td = tempfile::tempdir().unwrap();
         let node_path = td.path().join("marker");
-        let op = Operation::Sh("printf hi > marker".into());
+        let op = Operation::Sh("printf hi".into());
         op.execute(&node_path, true).unwrap();
-        assert!(!td.path().join("marker").exists());
+        assert!(!node_path.exists());
+    }
+
+    #[test]
+    fn sh_execute_bails_on_nonzero_exit() {
+        let td = tempfile::tempdir().unwrap();
+        let node_path = td.path().join("out");
+        let op = Operation::Sh("exit 1".into());
+        assert!(op.execute(&node_path, false).is_err());
+        assert!(!node_path.exists());
     }
 
     #[test]

@@ -47,7 +47,7 @@ fn ff_applies_a_remote_filefile() {
 fn remote_sh_op_is_rejected_by_default() {
     let td = tempfile::tempdir().unwrap();
     let root = td.path();
-    let url = serve_once("marker: !sh \"printf pwn > marker\"\n");
+    let url = serve_once("marker: !sh \"printf pwn\"\n");
 
     let output = Command::new(BIN)
         .current_dir(root)
@@ -69,7 +69,7 @@ fn remote_sh_op_is_rejected_by_default() {
 fn remote_sh_op_runs_with_allow_remote_ops() {
     let td = tempfile::tempdir().unwrap();
     let root = td.path();
-    let url = serve_once("marker: !sh \"printf hi > marker\"\n");
+    let url = serve_once("marker: !sh \"printf hi\"\n");
 
     let status = Command::new(BIN)
         .current_dir(root)

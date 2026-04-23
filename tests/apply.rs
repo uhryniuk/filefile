@@ -34,15 +34,11 @@ fn apply_creates_nested_dir_and_file_with_contents() {
 }
 
 #[test]
-fn node_with_sh_op_is_not_pre_created_as_empty_file() {
+fn sh_op_captures_stdout_into_node_file() {
     let td = tempfile::tempdir().unwrap();
     let root = td.path();
     let filefile = root.join("Filefile.yaml");
-    fs::write(
-        &filefile,
-        "marker: !sh \"printf hi > marker\"\n",
-    )
-    .unwrap();
+    fs::write(&filefile, "marker: !sh \"printf hi\"\n").unwrap();
 
     apply(root, &filefile);
 
