@@ -52,10 +52,14 @@ scripted:
 Applying this yields:
 
 ```
-./hello/world        # "contents of the file"
-./hello/here/I       # "am"
-./hello/empty_file   # 0 bytes
-./scripted/marker    # "hi"
+.
+├── hello/
+│   ├── world          # "contents of the file"
+│   ├── here/
+│   │   └── I          # "am"
+│   └── empty_file     # 0 bytes
+└── scripted/
+    └── marker         # "hi"
 ```
 
 ### Subcommands
