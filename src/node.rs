@@ -197,103 +197,55 @@ pub fn convert_nodes(mut nodes: Vec<Node>) -> Vec<Value> {
     list
 }
 
+/// Convert a YAML `Value` into a forest of `Node`s.
 ///
+/// Filefiles are pure mappings: the top-level `Value` must be a `Mapping`,
+/// and each entry's value determines the node kind:
+///   - `Value::String(s)` → file with contents `s`
+///   - `Value::Null`      → empty file
+///   - `Value::Mapping`   → directory with children
+///   - `Value::Tagged(t)` → node with the parsed `Operation` attached
 pub fn convert_value(value: &mut Value) -> Vec<Node> {
     let mut nodes: Vec<Node> = Vec::new();
-
-    match value {
-        Value::Null => todo!("not implemented"), // drop the node? create a comment?
-        // TODO these should throw error, just a warning to stderr that they aren't implemented.
-        Value::Bool(_b) => todo!("not implemented"),
-        // node in the file but don't do anything?
-        Value::Number(_n) => todo!("not implemented"), // i have no idea, probably the access level
-        Value::String(s) => {
-            nodes.push(Node::new(s.as_str()));
-        }
-        Value::Sequence(seq) => {
-            // files within a dir.
-            for (_index, item) in seq.iter_mut().enumerate() {
-                nodes.extend(convert_value(item));
-            }
-            return nodes;
-        }
-        Value::Mapping(map) => {
-            // println!("MAP: {:?}", map);
-
-            // TODO check if the map value is a tag
-            // if so, then don't recurse.
-
-            for (key, value) in map.iter_mut() {
-                let key_value = key.as_str().expect("Should get them out of graph");
-                let mut local_node = Node::new(key_value);
-                match value {
-                    Value::String(s) => {
-                        local_node.contents = Some(s.clone());
-                        local_node.node_type = NodeType::FILE;
-                    }
-                    Value::Null => {
-                        local_node.node_type = NodeType::FILE;
-                    }
-                    Value::Sequence(seq) => {
-                        // Update the path before it's turned into a node.
-                        // This way it maintains the proper basename and abs path.
-                        for index in seq.iter_mut() {
-                            if let Value::String(str) = index {
-                                // TODO join these paths in a more optimal way... PathBuf...
-                                *index = serde_yaml::Value::String(format!(
-                                    "{}/{}",
-                                    key.as_str().unwrap(),
-                                    str
-                                ));
-                            }
-                        }
-                        local_node.add_children(convert_value(value));
-                    }
-                    Value::Tagged(t) => {
-                        // TODO this one is only called if this occurs:
-                        // When operations are used on maps.
-                        // mongo:
-                        //  - something: !cp blah blorp
-                        //
-                        //  We should only take 1 arg, since we infer the location.
-                        //  so the above becomes:
-                        //  mongo:
-                        //      - something: !cp blah
-                        //
-                        //  Where the contents of blah will be in a new or overwritten file
-                        //  something
-                        match operations::Operation::from_tokens(
-                            &t.tag.to_string(),
-                            t.value.as_str().unwrap(),
-                        ) {
-                            Ok(op) => {
-                                local_node.op = Some(op);
-                            }
-                            Err(err) => {
-                                // TODO better error reporting
-                                eprintln!("ERROR: {}", err);
-                                std::process::exit(1);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-                nodes.push(local_node);
-            }
-
-            return nodes;
-        }
-        Value::Tagged(t) => {
-            // Called when tags are used without a mapping
-            // like:
-            // mongo:
-            //  - !cp blah blorp
-            //  Need to enforce 2 arguments here.
-            eprintln!("TAG IMPL ERROR: {:?}", t);
-        }
+    let Value::Mapping(map) = value else {
+        eprintln!("Filefile root must be a YAML mapping");
+        return nodes;
     };
 
-    return nodes;
+    for (key, val) in map.iter_mut() {
+        let name = key.as_str().expect("Filefile keys must be strings");
+        let mut node = Node::new(name);
+        match val {
+            Value::String(s) => {
+                node.contents = Some(s.clone());
+                node.node_type = NodeType::FILE;
+            }
+            Value::Null => {
+                node.node_type = NodeType::FILE;
+            }
+            Value::Mapping(_) => {
+                node.node_type = NodeType::DIRECTORY;
+                node.add_children(convert_value(val));
+            }
+            Value::Tagged(t) => {
+                match operations::Operation::from_tokens(
+                    &t.tag.to_string(),
+                    t.value.as_str().unwrap_or(""),
+                ) {
+                    Ok(op) => node.op = Some(op),
+                    Err(err) => {
+                        eprintln!("ERROR: {}", err);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            other => {
+                eprintln!("WARN: unsupported value for key {:?}: {:?}", name, other);
+            }
+        }
+        nodes.push(node);
+    }
+    nodes
 }
 
 #[cfg(test)]
@@ -321,5 +273,24 @@ mod tests {
         assert_eq!(nodes[0].basename, "foo");
         assert_eq!(nodes[0].node_type, NodeType::FILE);
         assert!(nodes[0].contents.is_none());
+    }
+
+    #[test]
+    fn nested_mapping_becomes_directory_with_children() {
+        let nodes = parse("outer:\n  inner: \"x\"\n");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].basename, "outer");
+        assert_eq!(nodes[0].node_type, NodeType::DIRECTORY);
+        assert_eq!(nodes[0].children.len(), 1);
+        assert_eq!(nodes[0].children[0].basename, "inner");
+        assert_eq!(nodes[0].children[0].contents.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn tagged_value_attaches_operation() {
+        let nodes = parse("repo: !git https://example.com/x.git\n");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].basename, "repo");
+        assert!(matches!(nodes[0].op, Some(crate::operations::Operation::Git(_))));
     }
 }

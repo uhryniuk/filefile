@@ -18,7 +18,7 @@ fn apply_creates_nested_dir_and_file_with_contents() {
     let filefile = root.join("Filefile.yaml");
     fs::write(
         &filefile,
-        "hello:\n  - world: \"contents of the file\"\n  - here:\n    - I: \"am\"\n",
+        "hello:\n  world: \"contents of the file\"\n  here:\n    I: \"am\"\n",
     )
     .unwrap();
 
@@ -38,13 +38,9 @@ fn node_with_sh_op_is_not_pre_created_as_empty_file() {
     let td = tempfile::tempdir().unwrap();
     let root = td.path();
     let filefile = root.join("Filefile.yaml");
-    // `marker` has an !sh op that produces exactly "hi" (no trailing newline).
-    // Without the op-short-circuit, apply would first write "" to marker, then
-    // the redirection inside sh would replace it — observable only if the op
-    // were skipped. This test guards against regressing the short-circuit.
     fs::write(
         &filefile,
-        "- marker: !sh \"printf hi > marker\"\n",
+        "marker: !sh \"printf hi > marker\"\n",
     )
     .unwrap();
 
