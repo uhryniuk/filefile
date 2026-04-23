@@ -24,6 +24,23 @@ ff Filefile.yaml
 
 Materializes the tree described by `Filefile.yaml` in the current directory.
 
+The positional argument can also be an `http://` or `https://` URL — the
+Filefile is streamed over HTTP and applied without ever touching disk:
+
+```sh
+ff https://example.com/Filefile.yaml
+```
+
+For safety, `!git` and `!sh` tags in a **remote** Filefile are rejected by
+default (a remote Filefile is otherwise a remote-code-execution primitive).
+Pass `--allow-remote-ops` to opt in when you trust the source:
+
+```sh
+ff --allow-remote-ops https://example.com/Filefile.yaml
+```
+
+Local Filefiles run tags unconditionally.
+
 ### Filefile syntax
 
 A Filefile is a YAML mapping. The key is the on-disk name; the value decides
@@ -73,6 +90,7 @@ Applying this yields:
   invocations without touching the filesystem.
 - `-v`, `--verbose` — extra output on stderr.
 - `-f`, `--force` — run operations that would otherwise warn.
+- `--allow-remote-ops` — permit `!git`/`!sh` in Filefiles fetched over http(s).
 
 ## Development
 
